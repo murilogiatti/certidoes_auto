@@ -65,6 +65,7 @@ class Pessoa:
     @property
     def cpf_limpo(self) -> str:
         return self.cpf.replace(".", "").replace("-", "").replace(" ", "")
+
     @property
     def cpf_formatado(self) -> str:
         c = self.cpf_limpo
