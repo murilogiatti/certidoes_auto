@@ -1,2 +1,9 @@
-venv/
 __pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+venv/
+downloads/
+certidoes_*.log
+relatorio_*.json
