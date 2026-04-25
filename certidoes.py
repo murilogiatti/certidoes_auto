@@ -158,13 +158,25 @@ async def aceitar_cookies(page: Page):
 
 
 async def aguardar_usuario(mensagem: str):
-    """Pausa e aguarda ENTER do usuário no terminal."""
+    """Pausa e aguarda ENTER do usuário ou sinal do Orion Hub."""
+    if os.getenv("AUTO_NOME"):
+        print(f"\n[PAUSA] {mensagem}")
+        print(f"➜ Aguardando interação manual no navegador...")
+        # Em modo automático, não usamos input() que trava subprocessos sem TTY.
+        # O usuário deve resolver o captcha no navegador. 
+        # O script continuará após uma pequena pausa ou você pode implementar um sinal de arquivo.
+        # Por enquanto, vamos deixar uma espera longa ou usar input se estivermos em um terminal real.
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, input)
+        except EOFError:
+            # Se não houver TTY, esperamos o usuário agir. 
+            # Como não temos sinal de "concluí", vamos ter que implementar um.
+            logger.warning("Ambiente sem TTY. O script pode travar se precisar de ENTER.")
+            await asyncio.sleep(5) 
+        return
+
     print(f"\n{'═'*62}")
-    print(f"  ⚠️  {mensagem}")
-    print(f"  ➜  Pressione ENTER aqui quando concluir...")
-    print(f"{'═'*62}\n")
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, input)
 
 
 async def preencher_campo(page: Page, seletores: list, valor: str, delay: int = 60) -> bool:
@@ -1299,6 +1311,21 @@ def coletar_dados() -> Pessoa:
     print("  📋  COLETA DE DADOS DA PESSOA")
     print("═" * 62)
 
+    # Injeção Orion Hub (Auto-preenchimento)
+    env_nome = os.getenv("AUTO_NOME")
+    env_cpf = os.getenv("AUTO_CPF")
+    if env_nome and env_cpf:
+        logger.info(f"🚀 [Orion Hub] Auto-preenchimento: {env_nome}")
+        return Pessoa(
+            nome=env_nome.upper(),
+            cpf=env_cpf,
+            rg=os.getenv("AUTO_RG", ""),
+            data_nascimento=os.getenv("AUTO_NASC", ""),
+            genero=os.getenv("AUTO_GENERO", "M").upper(),
+            nome_mae=os.getenv("AUTO_MAE", "").upper() or None,
+            email=os.getenv("AUTO_EMAIL", "").lower() or None
+        )
+
     # Valores iniciais (vazios na primeira vez)
     nome = cpf_raw = rg = data_nasc = genero_raw = nome_mae = email = ""
 
@@ -1388,6 +1415,10 @@ def selecionar_sites() -> list:
         "7": ("TRF 3ª Região",                  site_trf3),
         "8": ("Receita Federal — CND",          site_receita_federal),
     }
+
+    if os.environ.get("AUTO_NOME"):
+        logger.info("🤖 Modo Automático: Selecionando todos os portais.")
+        return list(opcoes.values())
 
     print("\n" + "═" * 62)
     print("  📄  SELECIONE AS CERTIDÕES")
@@ -1551,7 +1582,8 @@ async def main():
     print(f"  ⚠️  Quando solicitado, resolva CAPTCHAs no navegador")
     print(f"      e pressione ENTER no terminal.\n")
 
-    input("  Pressione ENTER para começar...")
+    if not os.getenv("AUTO_NOME"):
+        input("  Pressione ENTER para começar...")
 
     resultados = await executar(pessoa, sites)
     exibir_relatorio(resultados, pessoa)
