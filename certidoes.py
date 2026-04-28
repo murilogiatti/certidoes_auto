@@ -74,7 +74,10 @@ class Pessoa:
     @property
     def data_nascimento_iso(self) -> str:
         """DD/MM/AAAA → AAAA-MM-DD"""
-        d, m, a = self.data_nascimento.split("/")
+        parts = self.data_nascimento.split("/")
+        if len(parts) != 3:
+            raise ValueError("Data de nascimento inválida. Formato esperado: DD/MM/AAAA")
+        d, m, a = parts
         return f"{a}-{m}-{d}"
 
     @property
