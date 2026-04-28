@@ -1523,7 +1523,7 @@ async def executar(pessoa: Pessoa, sites: list):
 #  RELATÓRIO FINAL
 # ───────────────────────────────────────────────────────────────
 
-def exibir_relatorio(resultados: list, pessoa: Pessoa):
+async def exibir_relatorio(resultados: list, pessoa: Pessoa):
     pasta = criar_pasta(pessoa.nome)
 
     print("\n" + "═" * 62)
@@ -1559,8 +1559,12 @@ def exibir_relatorio(resultados: list, pessoa: Pessoa):
     }
 
     json_path = os.path.join(pasta, f"relatorio_{timestamp()}.json")
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(relatorio, f, ensure_ascii=False, indent=2)
+
+    def salvar_json():
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(relatorio, f, ensure_ascii=False, indent=2)
+
+    await asyncio.to_thread(salvar_json)
 
     print(f"\n  📋 Relatório salvo: {json_path}\n")
 
@@ -1586,7 +1590,7 @@ async def main():
         input("  Pressione ENTER para começar...")
 
     resultados = await executar(pessoa, sites)
-    exibir_relatorio(resultados, pessoa)
+    await exibir_relatorio(resultados, pessoa)
 
 
 if __name__ == "__main__":
