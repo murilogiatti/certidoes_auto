@@ -479,17 +479,6 @@ async def site_tst(page: Page, ctx: BrowserContext, pessoa: Pessoa, pasta: str) 
     nome = f"{pessoa.primeiro_nome}_tst"
     resultado = {"site": "TST", "sucesso": False, "arquivo": None, "erro": None}
 
-    sels_emitir_tst = [
-        '[id="gerarCertidaoForm:j_id30"]',
-        'input[value*="Emitir Certidão"]',
-        'input[value*="Emitir"]',
-        'button:has-text("Emitir Certidão")',
-        'button:has-text("Emitir")',
-        'a:has-text("Emitir Certidão")',
-        'a:has-text("Emitir")',
-        'a[href*="certidao"]',
-    ]
-
     try:
         logger.info("🔄 [3/8] TST — Iniciando...")
 
