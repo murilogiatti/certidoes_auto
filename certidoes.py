@@ -811,33 +811,33 @@ async def _site_tjsp(
         rg_preenchido = False
         try:
             # Estratégia 1: JS busca o input cujo label contém "RG"
-            await page.evaluate(f"""() => {{
+            await page.evaluate("""(rgValue) => {
                 const tds = document.querySelectorAll('td, th, label, span');
-                for (const td of tds) {{
-                    if (/^\\s*RG\\s*\\*?\\s*$/.test(td.textContent)) {{
+                for (const td of tds) {
+                    if (/^\\s*RG\\s*\\*?\\s*$/.test(td.textContent)) {
                         // pega o próximo input no DOM
                         let el = td.nextElementSibling;
-                        while (el && el.tagName !== 'INPUT') {{
+                        while (el && el.tagName !== 'INPUT') {
                             el = el.querySelector ? el.querySelector('input') : null;
                             if (!el) break;
-                        }}
-                        if (!el) {{
+                        }
+                        if (!el) {
                             // tenta pelo parentRow
                             const row = td.closest('tr');
                             if (row) el = row.querySelector('input');
-                        }}
-                        if (el) {{
+                        }
+                        if (el) {
                             el.focus();
                             el.value = '';
-                            el.value = '{pessoa.rg}';
-                            el.dispatchEvent(new Event('input', {{bubbles:true}}));
-                            el.dispatchEvent(new Event('change', {{bubbles:true}}));
-                            el.dispatchEvent(new Event('blur', {{bubbles:true}}));
-                        }}
+                            el.value = rgValue;
+                            el.dispatchEvent(new Event('input', {bubbles:true}));
+                            el.dispatchEvent(new Event('change', {bubbles:true}));
+                            el.dispatchEvent(new Event('blur', {bubbles:true}));
+                        }
                         break;
-                    }}
-                }}
-            }}""")
+                    }
+                }
+            }""", pessoa.rg)
             await page.wait_for_timeout(300)
             # Verifica se preencheu
             val = await page.evaluate("""() => {
