@@ -200,12 +200,11 @@ async def salvar_resultado(
     nome_base: str,
 ) -> Optional[str]:
     """
-    Salva o resultado da certidão.
-    Prioridade: 1) Downloads capturados  2) Nova aba com PDF  3) Screenshot
+    Salva o resultado da certidão com prioridade para PDF, nova aba ou print de página inteira.
     """
-    await page.wait_for_timeout(2500)
+    await page.wait_for_timeout(3500)
 
-    # 1) Downloads capturados
+    # 1) Verifica downloads capturados
     if downloads:
         dl = downloads[-1]
         try:
@@ -218,23 +217,31 @@ async def salvar_resultado(
         except Exception as e:
             logger.warning(f"   Falha ao salvar download: {e}")
 
-    # 2) Verifica novas abas (PDF pode ter aberto em nova aba)
+    # 2) Verifica se o PDF abriu em nova aba (blob ou PDF viewer)
     for p in context.pages:
         if p != page:
             try:
-                url = p.url
-                if ".pdf" in url.lower() or "blob:" in url:
-                    arquivo = os.path.join(pasta, f"{nome_base}_{datestamp()}.jpg")
-                    await p.screenshot(path=arquivo, full_page=True, type="jpeg")
-                    logger.info(f"   📸 Screenshot de nova aba: {arquivo}")
-                    return arquivo
+                # Rolagem para garantir renderização antes do print
+                await p.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                await p.wait_for_timeout(500)
+                await p.evaluate("window.scrollTo(0, 0)")
+                
+                arquivo = os.path.join(pasta, f"{nome_base}_{datestamp()}.jpg")
+                await p.screenshot(path=arquivo, full_page=True, type="jpeg", quality=90)
+                logger.info(f"   📸 Screenshot de nova aba (página inteira): {arquivo}")
+                return arquivo
             except Exception:
                 continue
 
-    # 3) Screenshot da página atual
+    # 3) Print da página atual como último recurso
+    # Rolagem para garantir renderização
+    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+    await page.wait_for_timeout(500)
+    await page.evaluate("window.scrollTo(0, 0)")
+    
     arquivo = os.path.join(pasta, f"{nome_base}_{datestamp()}.jpg")
-    await page.screenshot(path=arquivo, full_page=True, type="jpeg")
-    logger.info(f"   📸 Screenshot salvo: {arquivo}")
+    await page.screenshot(path=arquivo, full_page=True, type="jpeg", quality=90)
+    logger.info(f"   📸 Screenshot salvo (página inteira): {arquivo}")
     return arquivo
 
 
@@ -290,9 +297,9 @@ async def site_protesto_sp(page: Page, ctx: BrowserContext, pessoa: Pessoa, past
 
         # Usuário clica em Consultar (1º clique) manualmente
         sels_consultar = ['button:has-text("Consultar")', 'input[value="Consultar"]', 'a:has-text("Consultar")']
-        await aguardar_usuario("CENPROT — Preenchi o CPF. Clique em CONSULTAR no navegador e pressione ENTER aqui.")
+        await aguardar_usuario("CENPROT — Resolva o CAPTCHA no navegador (se aparecer) e pressione ENTER aqui.")
 
-        await page.wait_for_timeout(4000)
+        await page.wait_for_timeout(2000)
         try:
             await page.wait_for_load_state("networkidle", timeout=12000)
         except Exception:
@@ -309,11 +316,14 @@ async def site_protesto_sp(page: Page, ctx: BrowserContext, pessoa: Pessoa, past
             except Exception:
                 continue
 
-        await page.wait_for_timeout(5000)
+        # AGUARDA RESULTADO APARECER (Evita print da página de busca)
+        logger.info("   Aguardando tabela de resultados...")
         try:
-            await page.wait_for_load_state("networkidle", timeout=12000)
+            await page.wait_for_selector(".table-responsive, #resultado-consulta, .card-body", timeout=15000)
         except Exception:
             pass
+        
+        await page.wait_for_timeout(4000)
 
         # Screenshot do resultado
         arquivo = os.path.join(pasta, f"{nome}_{datestamp()}.jpg")
@@ -484,8 +494,16 @@ async def site_tst(page: Page, ctx: BrowserContext, pessoa: Pessoa, pasta: str) 
         await aceitar_cookies(page)
         await page.wait_for_timeout(2000)
 
-        # Usuário clica em "Emitir Certidão" manualmente (1º clique — navega para o form)
-        await aguardar_usuario("TST — Clique em 'Emitir Certidão' no navegador e pressione ENTER aqui.")
+        # Clica em "Emitir Certidão" para abrir o formulário
+        logger.info("   Abrindo formulário do TST...")
+        for sel in ['a:has-text("Emitir Certidão")', 'button:has-text("Emitir Certidão")']:
+            try:
+                el = page.locator(sel).first
+                if await el.is_visible(timeout=5000):
+                    await el.click()
+                    break
+            except Exception:
+                continue
 
         await page.wait_for_timeout(3000)
         try:
@@ -534,9 +552,13 @@ async def site_tst(page: Page, ctx: BrowserContext, pessoa: Pessoa, pasta: str) 
 
         if campo_cpf:
             await campo_cpf.click()
-            await campo_cpf.fill("")
-            await campo_cpf.type(pessoa.cpf_limpo, delay=60)
+            await campo_cpf.focus()
+            await page.wait_for_timeout(500)
+            await campo_cpf.press("Control+A")
+            await campo_cpf.press("Backspace")
+            await campo_cpf.type(pessoa.cpf_limpo, delay=120)
             await page.wait_for_timeout(1000)
+            await campo_cpf.press("Tab")
         else:
             await aguardar_usuario("TST — Campo CPF não encontrado. Preencha o CPF no navegador e pressione ENTER.")
 
@@ -654,10 +676,13 @@ async def site_divida_ativa_sp(page: Page, ctx: BrowserContext, pessoa: Pessoa, 
         await campo_cpf.fill("")
         await campo_cpf.type(pessoa.cpf_limpo, delay=60)
         await campo_cpf.evaluate("el => el.blur()")
-        await page.wait_for_timeout(1000)
+        
+        # Tempo extra para o CAPTCHA carregar/estabilizar
+        logger.info("   Aguardando carregamento do CAPTCHA...")
+        await page.wait_for_timeout(4000)
 
         # Usuário resolve CAPTCHA
-        await aguardar_usuario("Dívida Ativa PGE/SP — Resolva o CAPTCHA no navegador.")
+        await aguardar_usuario("Dívida Ativa PGE/SP — Resolva o CAPTCHA no navegador e pressione ENTER.")
 
         downloads: List[Download] = []
         page.on("download", lambda d: downloads.append(d))
@@ -1161,6 +1186,11 @@ async def site_receita_federal(page: Page, ctx: BrowserContext, pessoa: Pessoa, 
         # ── CPF ──────────────────────────────────────────────────────
         logger.info("   Aguardando campo CPF...")
         campo_cpf = None
+        
+        # Simula movimento de mouse aleatório para evitar detecção
+        await page.mouse.move(100, 100)
+        await page.mouse.move(200, 300, steps=10)
+        
         for sel_cpf in [
             'input[name="niContribuinte"]',
             'input[placeholder*="CPF"]',
@@ -1180,19 +1210,21 @@ async def site_receita_federal(page: Page, ctx: BrowserContext, pessoa: Pessoa, 
             await aguardar_usuario("Receita Federal — Campo CPF não encontrado. Preencha o CPF no navegador e pressione ENTER.")
         else:
             logger.info(f"   Preenchendo CPF: {pessoa.cpf_formatado}")
-            # Clica, seleciona tudo via keyboard e apaga antes de digitar
             await campo_cpf.click()
             await page.keyboard.press("Control+a")
             await page.keyboard.press("Delete")
-            await page.wait_for_timeout(200)
-            # Digita dígito a dígito — a máscara Angular aplica formatação
+            await page.wait_for_timeout(400)
+            
+            # Digitação ainda mais lenta para a Receita
             for digito in pessoa.cpf_limpo:
-                await page.keyboard.type(digito, delay=100)
-            await page.keyboard.press("Tab")   # dispara blur/change do Angular
-            await page.wait_for_timeout(600)
-            val_cpf = await campo_cpf.input_value()
-            logger.info(f"   CPF no campo: '{val_cpf}'")
-
+                await page.keyboard.type(digito, delay=150)
+            await page.keyboard.press("Tab")
+            await page.wait_for_timeout(800)
+        
+        # Pausa obrigatória para CAPTCHA na Receita (sempre tem desafio de imagem/clique)
+        await aguardar_usuario("Receita Federal — Resolva o desafio de segurança (CAPTCHA) no navegador e pressione ENTER.")
+        
+        await page.wait_for_timeout(600)
         # ── Data de Nascimento ────────────────────────────────────────
         logger.info(f"   Preenchendo data nascimento: {pessoa.data_nascimento}")
         campo_data = None
@@ -1366,13 +1398,13 @@ def coletar_dados() -> Pessoa:
             email = novo
 
         pessoa = Pessoa(
-            nome=nome,
+            nome=nome.upper().upper(),
             cpf=cpf_raw,
-            rg=rg,
+            rg=rg.upper().upper(),
             data_nascimento=data_nasc,
-            genero=genero_raw,
-            nome_mae=nome_mae if nome_mae else None,
-            email=email if email else None,
+            genero=genero_raw.upper(),
+            nome_mae=nome_mae.upper() if nome_mae else None,
+            email=email.lower().lower() if email else None,
         )
 
         print(f"\n  {'─'*58}")
@@ -1391,194 +1423,213 @@ def coletar_dados() -> Pessoa:
         print("  Corrija os campos necessários (Enter mantém o valor atual).\n")
 
 
-def selecionar_sites() -> list:
-    opcoes = {
-        "1": ("Protesto SP",                   site_protesto_sp),
-        "2": ("TRT 15 — CEAT",                 site_trt15),
-        "3": ("TST",                            site_tst),
-        "4": ("Dívida Ativa PGE/SP",            site_divida_ativa_sp),
-        "5": ("TJSP — Distribuição Cível",      site_tjsp_civil),
-        "6": ("TJSP — Distribuição Criminal",   site_tjsp_criminal),
-        "7": ("TRF 3ª Região",                  site_trf3),
-        "8": ("Receita Federal — CND",          site_receita_federal),
-    }
-
-    if os.environ.get("AUTO_NOME"):
-        logger.info("🤖 Modo Automático: Selecionando todos os portais.")
-        return list(opcoes.values())
-
-    print("\n" + "═" * 62)
-    print("  📄  SELECIONE AS CERTIDÕES")
-    print("═" * 62)
-    for num, (desc, _) in opcoes.items():
-        print(f"  {num}. {desc}")
-    print("  0. TODAS")
-    print()
-
-    escolha = input("  Opções (ex: 1,3,5 ou 0 para todas): ").strip()
-
-    if escolha == "0":
-        return list(opcoes.values())
-
-    selecionados = []
-    for num in escolha.replace(" ", "").split(","):
-        if num in opcoes:
-            selecionados.append(opcoes[num])
-
-    if not selecionados:
-        print("  Nenhuma seleção válida. Emitindo todas.")
-        return list(opcoes.values())
-
-    print("\n  Selecionados:")
-    for desc, _ in selecionados:
-        print(f"    ✅ {desc}")
-
-    return selecionados
-
-
-# ───────────────────────────────────────────────────────────────
-#  ORQUESTRADOR PRINCIPAL
-# ───────────────────────────────────────────────────────────────
-
-async def executar(pessoa: Pessoa, sites: list):
-    pasta = criar_pasta(pessoa.nome)
-    logger.info(f"📁 Pasta de downloads: {pasta}")
-
-    resultados = []
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=False,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--start-maximized",
-            ],
-        )
-
-        context = await browser.new_context(
-            viewport={"width": 1366, "height": 768},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            accept_downloads=True,
-            locale="pt-BR",
-        )
-
-        # Oculta o webdriver para reduzir detecção
-        await context.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-        """)
-
-        total = len(sites)
-        for i, (desc, func) in enumerate(sites, 1):
-            print(f"\n{'━'*62}")
-            print(f"  [{i}/{total}] {desc}")
-            print(f"{'━'*62}")
-
-            page = await context.new_page()
-
-            try:
-                resultado = await func(page, context, pessoa, pasta)
-                resultados.append(resultado)
-            except Exception as e:
-                logger.error(f"Erro fatal em {desc}: {e}")
-                resultados.append({
-                    "site": desc,
-                    "sucesso": False,
-                    "arquivo": None,
-                    "erro": str(e),
-                })
-            finally:
-                try:
-                    await page.close()
-                except Exception:
-                    pass
-
-            if i < total:
-                await asyncio.sleep(2)
-
-        await browser.close()
-
-    return resultados
-
-
-# ───────────────────────────────────────────────────────────────
-#  RELATÓRIO FINAL
-# ───────────────────────────────────────────────────────────────
-
 async def exibir_relatorio(resultados: list, pessoa: Pessoa):
+    """Gera o relatório final em JSON e exibe o resumo no terminal."""
     pasta = criar_pasta(pessoa.nome)
-
-    print("\n" + "═" * 62)
-    print("  📊  RELATÓRIO FINAL")
-    print("═" * 62)
-    print(f"  Pessoa: {pessoa.nome}")
-    print(f"  CPF:    {pessoa.cpf_formatado}")
-    print(f"  Data:   {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
-    print(f"  Pasta:  {pasta}")
-    print("─" * 62)
-
-    ok  = sum(1 for r in resultados if r["sucesso"])
-    err = len(resultados) - ok
-
-    for r in resultados:
-        icone = "✅" if r["sucesso"] else "❌"
-        print(f"\n  {icone}  {r['site']}")
-        if r["arquivo"]:
-            print(f"      📄 {os.path.basename(r['arquivo'])}")
-        if r["erro"]:
-            msg = r["erro"][:120] + "..." if len(r["erro"]) > 120 else r["erro"]
-            print(f"      ⚠️  {msg}")
-
-    print(f"\n{'─'*62}")
-    print(f"  Total: {len(resultados)} | ✅ {ok} | ❌ {err}")
-    print(f"{'═'*62}")
-
     relatorio = {
         "pessoa": {"nome": pessoa.nome, "cpf": pessoa.cpf_formatado},
         "data": datetime.now().isoformat(),
         "resultados": resultados,
-        "totais": {"total": len(resultados), "sucesso": ok, "erros": err},
+        "totais": {
+            "total": len(resultados), 
+            "sucesso": sum(1 for r in resultados if r["sucesso"]),
+            "erros": sum(1 for r in resultados if not r["sucesso"])
+        },
     }
-
     json_path = os.path.join(pasta, f"relatorio_{timestamp()}.json")
-
+    
     def salvar_json():
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(relatorio, f, ensure_ascii=False, indent=2)
-
+    
     await asyncio.to_thread(salvar_json)
-
-    print(f"\n  📋 Relatório salvo: {json_path}\n")
-
+    
+    print("\n" + "═" * 62)
+    print("  📊  RELATÓRIO FINAL")
+    print("═" * 62)
+    print(f"  Pessoa: {pessoa.nome}")
+    print(f"  Pasta:  {pasta}")
+    print("─" * 62)
+    for r in resultados:
+        icon = "✅" if r["sucesso"] else "❌"
+        print(f"  {icon}  {r['site']}")
+        if r["erro"]:
+            print(f"      ⚠️  {r['erro'][:80]}...")
+    print(f"{'═'*62}\n  📋 Relatório salvo em: {json_path}\n")
 
 # ───────────────────────────────────────────────────────────────
-#  PONTO DE ENTRADA
+#  DASHBOARD E PERSISTÊNCIA DE SESSÃO
 # ───────────────────────────────────────────────────────────────
+
+class GerenciadorSessao:
+    def __init__(self, pessoa: Pessoa):
+        self.pessoa = pessoa
+        self.pasta = criar_pasta(pessoa.nome)
+        self.caminho_status = os.path.join(self.pasta, ".status_sessao.json")
+        self.status = self._carregar_ou_criar()
+
+    def _carregar_ou_criar(self):
+        if os.path.exists(self.caminho_status):
+            try:
+                with open(self.caminho_status, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except:
+                pass
+        
+        # Estado inicial se não existir
+        return {
+            "sites": {
+                "1": {"nome": "Protesto SP", "status": "PENDENTE", "arquivo": None, "erro": None},
+                "2": {"nome": "TRT 15 — CEAT", "status": "PENDENTE", "arquivo": None, "erro": None},
+                "3": {"nome": "TST", "status": "PENDENTE", "arquivo": None, "erro": None},
+                "4": {"nome": "Dívida Ativa PGE/SP", "status": "PENDENTE", "arquivo": None, "erro": None},
+                "5": {"nome": "TJSP — Distribuição Cível", "status": "PENDENTE", "arquivo": None, "erro": None},
+                "6": {"nome": "TJSP — Distribuição Criminal", "status": "PENDENTE", "arquivo": None, "erro": None},
+                "7": {"nome": "TRF 3ª Região", "status": "PENDENTE", "arquivo": None, "erro": None},
+                "8": {"nome": "Receita Federal — CND", "status": "PENDENTE", "arquivo": None, "erro": None},
+            }
+        }
+
+    def salvar(self):
+        with open(self.caminho_status, "w", encoding="utf-8") as f:
+            json.dump(self.status, f, ensure_ascii=False, indent=2)
+
+    def obter_func_map(self):
+        return {
+            "1": site_protesto_sp,
+            "2": site_trt15,
+            "3": site_tst,
+            "4": site_divida_ativa_sp,
+            "5": site_tjsp_civil,
+            "6": site_tjsp_criminal,
+            "7": site_trf3,
+            "8": site_receita_federal,
+        }
+
+class Dashboard:
+    def __init__(self, sessao: GerenciadorSessao):
+        self.sessao = sessao
+        self.func_map = sessao.obter_func_map()
+
+    def exibir(self):
+        os.system('cls' if os.name == 'nt' else 'clear')
+        print("\n" + "═" * 65)
+        print("  📊  DASHBOARD DE CERTIDÕES (SESSÃO PERSISTENTE)")
+        print("═" * 65)
+        print(f"  Pessoa: {self.sessao.pessoa.nome}")
+        print(f"  CPF:    {self.sessao.pessoa.cpf_formatado}")
+        print(f"  Pasta:  {self.sessao.pasta}")
+        print("─" * 65)
+        
+        for id, info in self.sessao.status["sites"].items():
+            icon = "⚪" if info["status"] == "PENDENTE" else ("✅" if info["status"] == "OK" else "❌")
+            status_color = info["status"]
+            print(f"  {id}. [{icon}] {status_color:<9} | {info['nome']}")
+            if info["erro"]:
+                print(f"      ⚠️  Erro: {info['erro'][:70]}...")
+        
+        print("─" * 65)
+        print("  0. 🚀 EXECUTAR TODAS AS PENDENTES (Lote)")
+        print("  R. 🔄 REPETIR APENAS AS QUE FALHARAM")
+        print("  S. 🏁 FINALIZAR E GERAR RELATÓRIO")
+        print("═" * 65)
+
+    async def executar_um(self, site_id, context):
+        from playwright_stealth import stealth
+        info = self.sessao.status["sites"][site_id]
+        func = self.func_map[site_id]
+        
+        print(f"\n  ▶ Processando: {info['nome']}...")
+        page = await context.new_page()
+        
+        # Aplica Stealth para cada página
+        await stealth(page)
+        
+        try:
+            res = await func(page, context, self.sessao.pessoa, self.sessao.pasta)
+            arquivo_gerado = res.get("arquivo")
+            # Valida se o arquivo existe e não está vazio/corrompido
+            sucesso_real = res["sucesso"] and arquivo_gerado and os.path.exists(arquivo_gerado) and os.path.getsize(arquivo_gerado) > 5000
+            
+            if sucesso_real:
+                info["status"] = "OK"
+                info["arquivo"] = arquivo_gerado
+                info["erro"] = None
+            else:
+                info["status"] = "ERRO"
+                info["erro"] = res.get("erro") or "Arquivo não gerado ou inválido (muito pequeno)."
+        except Exception as e:
+            info["status"] = "ERRO"
+            info["erro"] = str(e)
+            logger.error(f"Falha fatal em {info['nome']}: {e}")
+        finally:
+            await page.close()
+            self.sessao.salvar()
+
+    async def loop(self):
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=False,
+                executable_path="/usr/bin/google-chrome-stable",
+                args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--start-maximized"],
+            )
+            context = await browser.new_context(
+                viewport={"width": 1366, "height": 768},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                accept_downloads=True,
+                locale="pt-BR",
+                timezone_id="America/Sao_Paulo",
+                permissions=["geolocation", "notifications"],
+                device_scale_factor=1,
+                has_touch=False,
+                is_mobile=False
+            )
+            await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+
+            while True:
+                self.exibir()
+                opcao = input("\n  Escolha (ID, 0, R ou S): ").strip().upper()
+
+                if opcao == "S":
+                    break
+                
+                alvos = []
+                if opcao == "0":
+                    alvos = [id for id, s in self.sessao.status["sites"].items() if s["status"] != "OK"]
+                elif opcao == "R":
+                    alvos = [id for id, s in self.sessao.status["sites"].items() if s["status"] == "ERRO"]
+                elif opcao in self.sessao.status["sites"]:
+                    alvos = [opcao]
+
+                if alvos:
+                    for id in alvos:
+                        await self.executar_um(id, context)
+                    input("\n  ✅ Fim da sequência. ENTER para voltar ao Dashboard...")
+            
+            await browser.close()
+        
+        await self.finalizar()
+
+    async def finalizar(self):
+        resultados = []
+        for id, info in self.sessao.status["sites"].items():
+            resultados.append({
+                "site": info["nome"],
+                "sucesso": info["status"] == "OK",
+                "arquivo": info["arquivo"],
+                "erro": info["erro"]
+            })
+        await exibir_relatorio(resultados, self.sessao.pessoa)
 
 async def main():
     print("\n" + "═" * 62)
-    print("  🏛️   AUTOMAÇÃO DE CERTIDÕES NEGATIVAS  v2.0")
+    print("  🏛️   AUTOMAÇÃO DE CERTIDÕES NEGATIVAS  v2.5")
     print("═" * 62)
 
     pessoa = coletar_dados()
-    sites  = selecionar_sites()
-
-    print(f"\n  🚀 Iniciando automação para: {pessoa.nome}")
-    print(f"  ⚠️  NÃO feche o navegador!")
-    print(f"  ⚠️  Quando solicitado, resolva CAPTCHAs no navegador")
-    print(f"      e pressione ENTER no terminal.\n")
-
-    if not os.getenv("AUTO_NOME"):
-        input("  Pressione ENTER para começar...")
-
-    resultados = await executar(pessoa, sites)
-    await exibir_relatorio(resultados, pessoa)
-
+    sessao = GerenciadorSessao(pessoa)
+    dash = Dashboard(sessao)
+    await dash.loop()
 
 if __name__ == "__main__":
     asyncio.run(main())
