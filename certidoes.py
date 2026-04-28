@@ -87,10 +87,6 @@ class Pessoa:
             if unicodedata.category(c) != 'Mn'
         )
 
-    @property
-    def data_nascimento_compacta(self) -> str:
-        """DD/MM/AAAA → DDMMAAAA (para campos numéricos)"""
-        return self.data_nascimento.replace("/", "")
 
 
 # ───────────────────────────────────────────────────────────────
