@@ -81,7 +81,10 @@ class Pessoa:
     def primeiro_nome(self) -> str:
         """Retorna o primeiro nome em minúsculas, sem acentos."""
         import unicodedata
-        n = self.nome.split()[0].lower()
+        partes = self.nome.split()
+        if not partes:
+            return ""
+        n = partes[0].lower()
         return ''.join(
             c for c in unicodedata.normalize('NFD', n)
             if unicodedata.category(c) != 'Mn'
