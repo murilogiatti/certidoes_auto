@@ -1,7 +1,38 @@
 import unittest
 from certidoes import Pessoa
 
-class TestPessoaPrimeiroNome(unittest.TestCase):
+class TestPessoa(unittest.TestCase):
+    # Testes de Data de Nascimento (Base Main)
+    def test_data_nascimento_iso_valid(self):
+        p = Pessoa(nome="TESTE", cpf="12345678901", rg="1234567", data_nascimento="28/11/1988")
+        self.assertEqual(p.data_nascimento_iso, "1988-11-28")
+
+    def test_data_nascimento_iso_invalid_format(self):
+        p = Pessoa(nome="TESTE", cpf="12345678901", rg="1234567", data_nascimento="28-11-1988")
+        with self.assertRaisesRegex(ValueError, "Data de nascimento inválida. Formato esperado: DD/MM/AAAA"):
+            _ = p.data_nascimento_iso
+
+    def test_data_nascimento_iso_missing_slashes(self):
+        p = Pessoa(nome="TESTE", cpf="12345678901", rg="1234567", data_nascimento="28111988")
+        with self.assertRaisesRegex(ValueError, "Data de nascimento inválida. Formato esperado: DD/MM/AAAA"):
+            _ = p.data_nascimento_iso
+
+    def test_data_nascimento_iso_empty(self):
+        p = Pessoa(nome="TESTE", cpf="12345678901", rg="1234567", data_nascimento="")
+        with self.assertRaisesRegex(ValueError, "Data de nascimento inválida. Formato esperado: DD/MM/AAAA"):
+            _ = p.data_nascimento_iso
+
+    def test_data_nascimento_iso_wrong_number_of_components(self):
+        p = Pessoa(nome="TESTE", cpf="12345678901", rg="1234567", data_nascimento="28/11")
+        with self.assertRaisesRegex(ValueError, "Data de nascimento inválida. Formato esperado: DD/MM/AAAA"):
+            _ = p.data_nascimento_iso
+
+    def test_data_nascimento_iso_too_many_components(self):
+        p = Pessoa(nome="TESTE", cpf="12345678901", rg="1234567", data_nascimento="28/11/1988/01")
+        with self.assertRaisesRegex(ValueError, "Data de nascimento inválida. Formato esperado: DD/MM/AAAA"):
+            _ = p.data_nascimento_iso
+
+    # Testes de Primeiro Nome (PR #3)
     def test_standard_name(self):
         p = Pessoa(nome="João Silva", cpf="", rg="", data_nascimento="")
         self.assertEqual(p.primeiro_nome, "joao")
@@ -28,12 +59,10 @@ class TestPessoaPrimeiroNome(unittest.TestCase):
 
     def test_empty_name(self):
         p = Pessoa(nome="", cpf="", rg="", data_nascimento="")
-        # This is expected to fail with IndexError initially
         self.assertEqual(p.primeiro_nome, "")
 
     def test_whitespace_only_name(self):
         p = Pessoa(nome="   ", cpf="", rg="", data_nascimento="")
-        # This is expected to fail with IndexError initially
         self.assertEqual(p.primeiro_nome, "")
 
 if __name__ == "__main__":
