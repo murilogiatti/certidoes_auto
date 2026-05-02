@@ -98,29 +98,7 @@ class Pessoa:
 #  FUNÇÕES UTILITÁRIAS
 # ───────────────────────────────────────────────────────────────
 
-def timestamp() -> str:  # kept for ERRO/relatorio files
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
-
-
-def datestamp() -> str:
-    """Somente data: YYYYMMDD — usado nos nomes dos arquivos de certidão."""
-    return datetime.now().strftime("%Y%m%d")
-
-
-def criar_pasta(nome_pessoa: str) -> str:
-    """Cria e retorna o caminho: ./downloads/{Nome}/"""
-    # Sanitiza o nome para uso como diretório
-    nome_dir = nome_pessoa.strip().upper()
-    # Remove caracteres inválidos em nomes de pasta
-    for c in r'\/:*?"<>|':
-        nome_dir = nome_dir.replace(c, "_")
-    pasta = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "downloads", nome_dir
-    )
-    os.makedirs(pasta, exist_ok=True)
-    return pasta
-
+from utils import timestamp, datestamp, criar_pasta, _formatar_data
 
 async def aceitar_cookies(page: Page):
     """Tenta aceitar banners de cookies comuns."""
@@ -614,8 +592,10 @@ async def site_tst(page: Page, ctx: BrowserContext, pessoa: Pessoa, pasta: str) 
                         const buf = await r.arrayBuffer();
                         return Array.from(new Uint8Array(buf));
                     }""")
-                    with open(arquivo, "wb") as f:
-                        f.write(bytes(pdf_bytes))
+                    def write_pdf():
+                        with open(arquivo, "wb") as f:
+                            f.write(bytes(pdf_bytes))
+                    await asyncio.to_thread(write_pdf)
                     logger.info(f"   💾 PDF da nova aba salvo: {arquivo}")
                 except Exception:
                     arquivo = os.path.join(pasta, f"{nome}_{datestamp()}.jpg")
@@ -1320,14 +1300,6 @@ def _ler_campo(prompt: str, atual: str = "") -> str:
     return input(f"  {prompt}: ").strip()
 
 
-def _formatar_data(raw: str) -> str:
-    """Tenta converter 28111988, 2811981, etc. em 28/11/1988."""
-    raw = raw.replace("/", "").replace("-", "").replace(".", "").strip()
-    if len(raw) == 8 and raw.isdigit():
-        return f"{raw[:2]}/{raw[2:4]}/{raw[4:]}"
-    return raw  # devolve como está se não reconhecer
-
-
 def coletar_dados() -> Pessoa:
     print("\n" + "═" * 62)
     print("  📋  COLETA DE DADOS DA PESSOA")
@@ -1465,20 +1437,34 @@ async def exibir_relatorio(resultados: list, pessoa: Pessoa):
 # ───────────────────────────────────────────────────────────────
 
 class GerenciadorSessao:
-    def __init__(self, pessoa: Pessoa):
+    def __init__(self, pessoa: Pessoa, status: dict):
         self.pessoa = pessoa
         self.pasta = criar_pasta(pessoa.nome)
         self.caminho_status = os.path.join(self.pasta, ".status_sessao.json")
-        self.status = self._carregar_ou_criar()
+        self.status = status
 
-    def _carregar_ou_criar(self):
-        if os.path.exists(self.caminho_status):
-            try:
-                with open(self.caminho_status, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except:
-                pass
-        
+    @classmethod
+    async def inicializar(cls, pessoa: Pessoa) -> 'GerenciadorSessao':
+        pasta = criar_pasta(pessoa.nome)
+        caminho_status = os.path.join(pasta, ".status_sessao.json")
+        status = await cls._carregar_ou_criar_async(caminho_status)
+        return cls(pessoa, status)
+
+    @staticmethod
+    async def _carregar_ou_criar_async(caminho_status: str) -> dict:
+        def read_file():
+            if os.path.exists(caminho_status):
+                try:
+                    with open(caminho_status, "r", encoding="utf-8") as f:
+                        return json.load(f)
+                except Exception:
+                    pass
+            return None
+
+        status = await asyncio.to_thread(read_file)
+        if status is not None:
+            return status
+
         # Estado inicial se não existir
         return {
             "sites": {
@@ -1493,9 +1479,11 @@ class GerenciadorSessao:
             }
         }
 
-    def salvar(self):
-        with open(self.caminho_status, "w", encoding="utf-8") as f:
-            json.dump(self.status, f, ensure_ascii=False, indent=2)
+    async def salvar(self):
+        def write_file():
+            with open(self.caminho_status, "w", encoding="utf-8") as f:
+                json.dump(self.status, f, ensure_ascii=False, indent=2)
+        await asyncio.to_thread(write_file)
 
     def obter_func_map(self):
         return {
@@ -1567,7 +1555,7 @@ class Dashboard:
             logger.error(f"Falha fatal em {info['nome']}: {e}")
         finally:
             await page.close()
-            self.sessao.salvar()
+            await self.sessao.salvar()
 
     async def loop(self):
         async with async_playwright() as p:
@@ -1630,7 +1618,7 @@ async def main():
     print("═" * 62)
 
     pessoa = coletar_dados()
-    sessao = GerenciadorSessao(pessoa)
+    sessao = await GerenciadorSessao.inicializar(pessoa)
     dash = Dashboard(sessao)
     await dash.loop()
 
