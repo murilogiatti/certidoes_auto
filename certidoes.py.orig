@@ -31,8 +31,6 @@ from playwright.async_api import (
     Download,
 )
 
-from utils import timestamp, datestamp, criar_pasta, _formatar_data
-
 # ───────────────────────────────────────────────────────────────
 #  LOGGING
 # ───────────────────────────────────────────────────────────────
