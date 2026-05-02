@@ -111,9 +111,10 @@ def criar_pasta(nome_pessoa: str) -> str:
     """Cria e retorna o caminho: ./downloads/{Nome}/"""
     # Sanitiza o nome para uso como diretório
     nome_dir = nome_pessoa.strip().upper()
-    # Remove caracteres inválidos em nomes de pasta
+    # Remove caracteres inválidos em nomes de pasta, além de evitar path traversal (..)
     for c in r'\/:*?"<>|':
         nome_dir = nome_dir.replace(c, "_")
+    nome_dir = nome_dir.replace(".", "")
     pasta = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
         "downloads", nome_dir
@@ -1476,7 +1477,7 @@ class GerenciadorSessao:
             try:
                 with open(self.caminho_status, "r", encoding="utf-8") as f:
                     return json.load(f)
-            except:
+            except Exception:
                 pass
         
         # Estado inicial se não existir
