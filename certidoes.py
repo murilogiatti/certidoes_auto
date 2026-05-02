@@ -31,6 +31,8 @@ from playwright.async_api import (
     Download,
 )
 
+from utils import timestamp, datestamp, criar_pasta, _formatar_data
+
 # ───────────────────────────────────────────────────────────────
 #  LOGGING
 # ───────────────────────────────────────────────────────────────
@@ -97,30 +99,6 @@ class Pessoa:
 # ───────────────────────────────────────────────────────────────
 #  FUNÇÕES UTILITÁRIAS
 # ───────────────────────────────────────────────────────────────
-
-def timestamp() -> str:  # kept for ERRO/relatorio files
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
-
-
-def datestamp() -> str:
-    """Somente data: YYYYMMDD — usado nos nomes dos arquivos de certidão."""
-    return datetime.now().strftime("%Y%m%d")
-
-
-def criar_pasta(nome_pessoa: str) -> str:
-    """Cria e retorna o caminho: ./downloads/{Nome}/"""
-    # Sanitiza o nome para uso como diretório
-    nome_dir = nome_pessoa.strip().upper()
-    # Remove caracteres inválidos em nomes de pasta
-    for c in r'\/:*?"<>|':
-        nome_dir = nome_dir.replace(c, "_")
-    pasta = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "downloads", nome_dir
-    )
-    os.makedirs(pasta, exist_ok=True)
-    return pasta
-
 
 async def aceitar_cookies(page: Page):
     """Tenta aceitar banners de cookies comuns."""
@@ -1320,14 +1298,6 @@ def _ler_campo(prompt: str, atual: str = "") -> str:
     return input(f"  {prompt}: ").strip()
 
 
-def _formatar_data(raw: str) -> str:
-    """Tenta converter 28111988, 2811981, etc. em 28/11/1988."""
-    raw = raw.replace("/", "").replace("-", "").replace(".", "").strip()
-    if len(raw) == 8 and raw.isdigit():
-        return f"{raw[:2]}/{raw[2:4]}/{raw[4:]}"
-    return raw  # devolve como está se não reconhecer
-
-
 def coletar_dados() -> Pessoa:
     print("\n" + "═" * 62)
     print("  📋  COLETA DE DADOS DA PESSOA")
@@ -1465,37 +1435,45 @@ async def exibir_relatorio(resultados: list, pessoa: Pessoa):
 # ───────────────────────────────────────────────────────────────
 
 class GerenciadorSessao:
-    def __init__(self, pessoa: Pessoa):
+    def __init__(self, pessoa: Pessoa, pasta: str, caminho_status: str, status: dict):
         self.pessoa = pessoa
-        self.pasta = criar_pasta(pessoa.nome)
-        self.caminho_status = os.path.join(self.pasta, ".status_sessao.json")
-        self.status = self._carregar_ou_criar()
+        self.pasta = pasta
+        self.caminho_status = caminho_status
+        self.status = status
 
-    def _carregar_ou_criar(self):
-        if os.path.exists(self.caminho_status):
-            try:
-                with open(self.caminho_status, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except:
-                pass
+    @classmethod
+    async def inicializar(cls, pessoa: Pessoa) -> "GerenciadorSessao":
+        pasta = criar_pasta(pessoa.nome)
+        caminho_status = os.path.join(pasta, ".status_sessao.json")
         
-        # Estado inicial se não existir
-        return {
-            "sites": {
-                "1": {"nome": "Protesto SP", "status": "PENDENTE", "arquivo": None, "erro": None},
-                "2": {"nome": "TRT 15 — CEAT", "status": "PENDENTE", "arquivo": None, "erro": None},
-                "3": {"nome": "TST", "status": "PENDENTE", "arquivo": None, "erro": None},
-                "4": {"nome": "Dívida Ativa PGE/SP", "status": "PENDENTE", "arquivo": None, "erro": None},
-                "5": {"nome": "TJSP — Distribuição Cível", "status": "PENDENTE", "arquivo": None, "erro": None},
-                "6": {"nome": "TJSP — Distribuição Criminal", "status": "PENDENTE", "arquivo": None, "erro": None},
-                "7": {"nome": "TRF 3ª Região", "status": "PENDENTE", "arquivo": None, "erro": None},
-                "8": {"nome": "Receita Federal — CND", "status": "PENDENTE", "arquivo": None, "erro": None},
+        def _ler_arquivo():
+            if os.path.exists(caminho_status):
+                try:
+                    with open(caminho_status, "r", encoding="utf-8") as f:
+                        return json.load(f)
+                except Exception:
+                    pass
+            return {
+                "sites": {
+                    "1": {"nome": "Protesto SP", "status": "PENDENTE", "arquivo": None, "erro": None},
+                    "2": {"nome": "TRT 15 — CEAT", "status": "PENDENTE", "arquivo": None, "erro": None},
+                    "3": {"nome": "TST", "status": "PENDENTE", "arquivo": None, "erro": None},
+                    "4": {"nome": "Dívida Ativa PGE/SP", "status": "PENDENTE", "arquivo": None, "erro": None},
+                    "5": {"nome": "TJSP — Distribuição Cível", "status": "PENDENTE", "arquivo": None, "erro": None},
+                    "6": {"nome": "TJSP — Distribuição Criminal", "status": "PENDENTE", "arquivo": None, "erro": None},
+                    "7": {"nome": "TRF 3ª Região", "status": "PENDENTE", "arquivo": None, "erro": None},
+                    "8": {"nome": "Receita Federal — CND", "status": "PENDENTE", "arquivo": None, "erro": None},
+                }
             }
-        }
 
-    def salvar(self):
-        with open(self.caminho_status, "w", encoding="utf-8") as f:
-            json.dump(self.status, f, ensure_ascii=False, indent=2)
+        status = await asyncio.to_thread(_ler_arquivo)
+        return cls(pessoa, pasta, caminho_status, status)
+
+    async def salvar(self):
+        def _escrever_arquivo():
+            with open(self.caminho_status, "w", encoding="utf-8") as f:
+                json.dump(self.status, f, ensure_ascii=False, indent=2)
+        await asyncio.to_thread(_escrever_arquivo)
 
     def obter_func_map(self):
         return {
@@ -1567,7 +1545,7 @@ class Dashboard:
             logger.error(f"Falha fatal em {info['nome']}: {e}")
         finally:
             await page.close()
-            self.sessao.salvar()
+            await self.sessao.salvar()
 
     async def loop(self):
         async with async_playwright() as p:
@@ -1630,7 +1608,7 @@ async def main():
     print("═" * 62)
 
     pessoa = coletar_dados()
-    sessao = GerenciadorSessao(pessoa)
+    sessao = await GerenciadorSessao.inicializar(pessoa)
     dash = Dashboard(sessao)
     await dash.loop()
 
