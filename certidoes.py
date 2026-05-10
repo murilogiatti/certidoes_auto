@@ -1466,15 +1466,27 @@ class GerenciadorSessao:
         self.pessoa = pessoa
         self.pasta = criar_pasta(pessoa.nome)
         self.caminho_status = os.path.join(self.pasta, ".status_sessao.json")
-        self.status = self._carregar_ou_criar()
+        self.status = {}
 
-    def _carregar_ou_criar(self):
-        if os.path.exists(self.caminho_status):
-            try:
-                with open(self.caminho_status, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except:
-                pass
+    @classmethod
+    async def inicializar(cls, pessoa: Pessoa):
+        instancia = cls(pessoa)
+        instancia.status = await instancia._carregar_ou_criar()
+        return instancia
+
+    async def _carregar_ou_criar(self):
+        def carregar():
+            if os.path.exists(self.caminho_status):
+                try:
+                    with open(self.caminho_status, "r", encoding="utf-8") as f:
+                        return json.load(f)
+                except:
+                    pass
+            return None
+
+        status = await asyncio.to_thread(carregar)
+        if status:
+            return status
         
         # Estado inicial se não existir
         return {
@@ -1490,9 +1502,12 @@ class GerenciadorSessao:
             }
         }
 
-    def salvar(self):
-        with open(self.caminho_status, "w", encoding="utf-8") as f:
-            json.dump(self.status, f, ensure_ascii=False, indent=2)
+    async def salvar(self):
+        def salvar_sync():
+            with open(self.caminho_status, "w", encoding="utf-8") as f:
+                json.dump(self.status, f, ensure_ascii=False, indent=2)
+
+        await asyncio.to_thread(salvar_sync)
 
     def obter_func_map(self):
         return {
@@ -1564,7 +1579,7 @@ class Dashboard:
             logger.error(f"Falha fatal em {info['nome']}: {e}")
         finally:
             await page.close()
-            self.sessao.salvar()
+            await self.sessao.salvar()
 
     async def loop(self):
         async with async_playwright() as p:
@@ -1627,7 +1642,7 @@ async def main():
     print("═" * 62)
 
     pessoa = coletar_dados()
-    sessao = GerenciadorSessao(pessoa)
+    sessao = await GerenciadorSessao.inicializar(pessoa)
     dash = Dashboard(sessao)
     await dash.loop()
 
