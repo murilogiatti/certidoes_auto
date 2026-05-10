@@ -139,26 +139,21 @@ async def aceitar_cookies(page: Page):
 
 
 async def aguardar_usuario(mensagem: str):
-    """Pausa e aguarda ENTER do usuário ou sinal do Orion Hub."""
-    if os.getenv("AUTO_NOME"):
-        print(f"\n[PAUSA] {mensagem}")
-        print(f"➜ Aguardando interação manual no navegador...")
-        # Em modo automático, não usamos input() que trava subprocessos sem TTY.
-        # O usuário deve resolver o captcha no navegador. 
-        # O script continuará após uma pequena pausa ou você pode implementar um sinal de arquivo.
-        # Por enquanto, vamos deixar uma espera longa ou usar input se estivermos em um terminal real.
-        try:
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, input)
-        except EOFError:
-            # Se não houver TTY, esperamos o usuário agir. 
-            # Como não temos sinal de "concluí", vamos ter que implementar um.
-            logger.warning("Ambiente sem TTY. O script pode travar se precisar de ENTER.")
-            await asyncio.sleep(5) 
+    """Pausa e aguarda ENTER do usuário."""
+    import sys
+    print(f"\n[PAUSA] {mensagem}")
+    print(f"➜ Aguardando interação manual no navegador...")
+    if not sys.stdin.isatty():
+        logger.warning("Ambiente sem TTY. Aguardando 15s automaticamente.")
+        await asyncio.sleep(15)
         return
-
-    print(f"\n{'═'*62}")
-
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, input)
+    except EOFError:
+        logger.warning("EOF detectado. Aguardando 15s automaticamente.")
+        await asyncio.sleep(15)
+    return
 
 async def preencher_campo(page: Page, seletores: list, valor: str, delay: int = 60) -> bool:
     """Tenta preencher o primeiro campo visível dentre os seletores."""
@@ -440,7 +435,6 @@ async def site_trt15(page: Page, ctx: BrowserContext, pessoa: Pessoa, pasta: str
                 continue
 
         await page.wait_for_timeout(6000)
-
         arquivo = await salvar_resultado(page, ctx, downloads, pasta, nome)
         resultado.update({"sucesso": True, "arquivo": arquivo})
         logger.info("✅ [2/8] TRT 15 (CEAT) — Concluído!")
@@ -548,25 +542,46 @@ async def site_tst(page: Page, ctx: BrowserContext, pessoa: Pessoa, pasta: str) 
         downloads: List[Download] = []
         page.on("download", lambda d: downloads.append(d))
 
-        await aguardar_usuario("TST — Resolva o desafio e pressione ENTER (o script clicará em Imprimir Certidão).")
+        await aguardar_usuario("TST — Resolva o desafio e pressione ENTER (o script clicará em Emitir Certidão).")
 
-        # Clica em "Imprimir Certidão" para gerar o PDF
-        logger.info("   Clicando em 'Imprimir Certidão'...")
-        for sel in [
-            'a:has-text("Imprimir Certidão")',
-            'button:has-text("Imprimir Certidão")',
-            'button:has-text("Imprimir")',
-            'a:has-text("Imprimir")',
-            'input[value*="Imprimir"]',
-        ]:
-            try:
-                el = page.locator(sel).first
-                if await el.is_visible(timeout=5000):
-                    await el.click()
-                    logger.info(f"   Imprimir clicado via: {sel}")
-                    break
-            except Exception:
-                continue
+        # Clica em "Emitir Certidão" para gerar o PDF
+        logger.info("   Clicando em 'Emitir Certidão'...")
+        emitiu = False
+        for frame in page.frames:
+            for sel in [
+                'a:has-text("Emitir Certidão")',
+                'button:has-text("Emitir Certidão")',
+                'button:has-text("Emitir")',
+                'input[value*="Emitir"]',
+            ]:
+                try:
+                    el = frame.locator(sel).first
+                    if await el.is_visible(timeout=2000):
+                        await el.click()
+                        logger.info(f"   Emitir clicado via iframe: {sel}")
+                        emitiu = True
+                        break
+                except Exception:
+                    continue
+            if emitiu:
+                break
+                
+        if not emitiu:
+            # Fallback para tentar na página principal caso não ache no frame
+            for sel in [
+                'a:has-text("Emitir Certidão")',
+                'button:has-text("Emitir Certidão")',
+                'button:has-text("Emitir")',
+                'input[value*="Emitir"]',
+            ]:
+                try:
+                    el = page.locator(sel).first
+                    if await el.is_visible(timeout=3000):
+                        await el.click()
+                        logger.info(f"   Emitir clicado via página principal: {sel}")
+                        break
+                except Exception:
+                    continue
 
         # Aguarda nova aba (PDF) abrir ou download disparar
         await page.wait_for_timeout(3000)
@@ -1026,6 +1041,11 @@ async def site_tjsp_civil(page: Page, ctx: BrowserContext, pessoa: Pessoa, pasta
 
 
 async def site_tjsp_criminal(page: Page, ctx: BrowserContext, pessoa: Pessoa, pasta: str) -> dict:
+    if not pessoa.data_nascimento or not pessoa.nome_mae:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("⏭️ [6/8] TJSP Criminal — Ignorada (Data de Nascimento ou Nome da Mãe não informados).")
+        return {"site": "TJSP 1ª Instância (Criminal)", "sucesso": True, "arquivo": "IGNORADA", "erro": None}
     return await _site_tjsp(page, ctx, pessoa, pasta, "criminal")
 
 
@@ -1052,9 +1072,21 @@ async def site_trf3(page: Page, ctx: BrowserContext, pessoa: Pessoa, pasta: str)
         await aceitar_cookies(page)
         await page.wait_for_timeout(2000)
 
+        # Trata Cloudflare ou carregamento inicial
+        logger.info("   Aguardando carregamento da página ou desafio Cloudflare...")
+        tentativas = 0
+        while True:
+            try:
+                await page.wait_for_selector("#Tipo", timeout=10000)
+                break  # Elemento encontrado, sai do loop
+            except Exception:
+                tentativas += 1
+                if tentativas > 3:
+                    raise Exception("Falha repetida ao tentar contornar o Cloudflare ou carregar a página.")
+                await aguardar_usuario("TRF 3ª Região — Desafio Cloudflare detectado. Resolva a verificação ('Sou Humano') no navegador, aguarde a página carregar e pressione ENTER aqui no terminal.")
+
         # Selects
         logger.info("   Selecionando tipo: CIVEL")
-        await page.wait_for_selector("#Tipo", timeout=15000)
         await page.select_option("#Tipo", "CIVEL")
         await page.wait_for_timeout(800)
 
@@ -1157,6 +1189,11 @@ async def site_receita_federal(page: Page, ctx: BrowserContext, pessoa: Pessoa, 
     nome = f"{pessoa.primeiro_nome}_rf"
     resultado = {"site": "Receita Federal - CND", "sucesso": False, "arquivo": None, "erro": None}
 
+    if not pessoa.data_nascimento:
+        logger.info("⏭️ [8/8] Receita Federal — Ignorada (Data de Nascimento não informada).")
+        resultado.update({"sucesso": True, "arquivo": "IGNORADA", "erro": None})
+        return resultado
+
     try:
         logger.info("🔄 [8/8] Receita Federal — Iniciando...")
 
@@ -1206,10 +1243,6 @@ async def site_receita_federal(page: Page, ctx: BrowserContext, pessoa: Pessoa, 
             await page.keyboard.press("Tab")
             await page.wait_for_timeout(800)
         
-        # Pausa obrigatória para CAPTCHA na Receita (sempre tem desafio de imagem/clique)
-        await aguardar_usuario("Receita Federal — Resolva o desafio de segurança (CAPTCHA) no navegador e pressione ENTER.")
-        
-        await page.wait_for_timeout(600)
         # ── Data de Nascimento ────────────────────────────────────────
         logger.info(f"   Preenchendo data nascimento: {pessoa.data_nascimento}")
         campo_data = None
@@ -1235,9 +1268,16 @@ async def site_receita_federal(page: Page, ctx: BrowserContext, pessoa: Pessoa, 
             await page.keyboard.press("Control+a")
             await page.keyboard.press("Delete")
             await page.wait_for_timeout(200)
-            await page.keyboard.type(pessoa.data_nascimento, delay=80)
+            
+            # Para campos Angular com máscara, fill() garante a inserção direta do valor sem conflitos
+            await campo_data.fill(pessoa.data_nascimento)
             await page.keyboard.press("Tab")
             await page.wait_for_timeout(600)
+
+        # Pausa obrigatória para CAPTCHA na Receita (sempre tem desafio de imagem/clique)
+        await aguardar_usuario("Receita Federal — Resolva o desafio de segurança (CAPTCHA) no navegador e pressione ENTER.")
+        
+        await page.wait_for_timeout(600)
 
         # ── Emitir Certidão ───────────────────────────────────────────
         await page.wait_for_timeout(500)
@@ -1528,22 +1568,21 @@ class Dashboard:
         print("═" * 65)
 
     async def executar_um(self, site_id, context):
-        from playwright_stealth import stealth
         info = self.sessao.status["sites"][site_id]
         func = self.func_map[site_id]
-        
+
         print(f"\n  ▶ Processando: {info['nome']}...")
         page = await context.new_page()
-        
-        # Aplica Stealth para cada página
-        await stealth(page)
         
         try:
             res = await func(page, context, self.sessao.pessoa, self.sessao.pasta)
             arquivo_gerado = res.get("arquivo")
-            # Valida se o arquivo existe e não está vazio/corrompido
-            sucesso_real = res["sucesso"] and arquivo_gerado and os.path.exists(arquivo_gerado) and os.path.getsize(arquivo_gerado) > 5000
-            
+            # Valida se o arquivo existe e não está vazio/corrompido, ou se foi ignorado
+            if arquivo_gerado == "IGNORADA":
+                sucesso_real = True
+            else:
+                sucesso_real = res["sucesso"] and arquivo_gerado and os.path.exists(arquivo_gerado) and os.path.getsize(arquivo_gerado) > 5000
+
             if sucesso_real:
                 info["status"] = "OK"
                 info["arquivo"] = arquivo_gerado
@@ -1568,7 +1607,6 @@ class Dashboard:
             )
             context = await browser.new_context(
                 viewport={"width": 1366, "height": 768},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
                 accept_downloads=True,
                 locale="pt-BR",
                 timezone_id="America/Sao_Paulo",
@@ -1577,18 +1615,42 @@ class Dashboard:
                 has_touch=False,
                 is_mobile=False
             )
-            await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
 
             while True:
                 self.exibir()
-                opcao = input("\n  Escolha (ID, 0, R ou S): ").strip().upper()
+
+                if os.getenv("AUTO_NOME"):
+                    if os.getenv("AUTO_FORCE") == "1":
+                        pendentes = [id for id, s in self.sessao.status["sites"].items()]
+                    else:
+                        pendentes = [id for id, s in self.sessao.status["sites"].items() if s["status"] != "OK"]
+                        
+                    if os.getenv("AUTO_SITES"):
+                        permitidos = [s.strip() for s in os.getenv("AUTO_SITES").split(",")]
+                        pendentes = [id for id in pendentes if id in permitidos]
+                    
+                    if pendentes:
+                        opcao = "0"
+                        print("\n  [Orion Hub] Auto-executando pendentes permitidos (Opção 0)...")
+                    else:
+                        opcao = "S"
+                        print("\n  [Orion Hub] Concluído, finalizando sessão (Opção S)...")
+                else:
+                    opcao = input("\n  Escolha (ID, 0, R ou S): ").strip().upper()
 
                 if opcao == "S":
                     break
-                
+
                 alvos = []
                 if opcao == "0":
-                    alvos = [id for id, s in self.sessao.status["sites"].items() if s["status"] != "OK"]
+                    if os.getenv("AUTO_NOME") and os.getenv("AUTO_FORCE") == "1":
+                        alvos = [id for id, s in self.sessao.status["sites"].items()]
+                    else:
+                        alvos = [id for id, s in self.sessao.status["sites"].items() if s["status"] != "OK"]
+                        
+                    if os.getenv("AUTO_NOME") and os.getenv("AUTO_SITES"):
+                        permitidos = [s.strip() for s in os.getenv("AUTO_SITES").split(",")]
+                        alvos = [id for id in alvos if id in permitidos]
                 elif opcao == "R":
                     alvos = [id for id, s in self.sessao.status["sites"].items() if s["status"] == "ERRO"]
                 elif opcao in self.sessao.status["sites"]:
@@ -1597,8 +1659,8 @@ class Dashboard:
                 if alvos:
                     for id in alvos:
                         await self.executar_um(id, context)
-                    input("\n  ✅ Fim da sequência. ENTER para voltar ao Dashboard...")
-            
+                    if not os.getenv("AUTO_NOME"):
+                        input("\n  ✅ Fim da sequência. ENTER para voltar ao Dashboard...")            
             await browser.close()
         
         await self.finalizar()

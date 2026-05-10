@@ -1,4 +1,6 @@
 import os
+import re
+import unicodedata
 from datetime import datetime
 
 def timestamp() -> str:  # kept for ERRO/relatorio files
@@ -10,11 +12,17 @@ def datestamp() -> str:
 
 def criar_pasta(nome_pessoa: str) -> str:
     """Cria e retorna o caminho: ./downloads/{Nome}/"""
-    # Sanitiza o nome para uso como diretório
-    nome_dir = nome_pessoa.strip().upper()
-    # Remove caracteres inválidos em nomes de pasta
-    for c in r'\/:*?"<>|':
-        nome_dir = nome_dir.replace(c, "_")
+    # Remove acentos
+    n = unicodedata.normalize('NFD', nome_pessoa)
+    nome_dir = ''.join(c for c in n if unicodedata.category(c) != 'Mn')
+    
+    # Maiúsculas e remove caracteres especiais
+    nome_dir = nome_dir.strip().upper()
+    nome_dir = re.sub(r'[^A-Z0-9 \-_]', '', nome_dir)
+    
+    # Remove espaços duplos
+    nome_dir = re.sub(r'\s+', ' ', nome_dir).strip()
+    
     pasta = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
         "downloads", nome_dir
