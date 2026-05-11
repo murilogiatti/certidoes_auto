@@ -38,7 +38,7 @@ async def main():
     print("═" * 62)
 
     pessoa = coletar_dados()
-    sessao = GerenciadorSessao(pessoa)
+    sessao = await GerenciadorSessao.inicializar(pessoa)
     dash = Dashboard(sessao)
     await dash.loop()
 
