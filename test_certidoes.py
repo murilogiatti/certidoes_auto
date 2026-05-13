@@ -65,5 +65,26 @@ class TestPessoa(unittest.TestCase):
         p = Pessoa(nome="   ", cpf="", rg="", data_nascimento="")
         self.assertEqual(p.primeiro_nome, "")
 
+    # Testes de CPF formatado
+    def test_cpf_formatado_valid_unformatted(self):
+        p = Pessoa(nome="TESTE", cpf="12345678901", rg="", data_nascimento="")
+        self.assertEqual(p.cpf_formatado, "123.456.789-01")
+
+    def test_cpf_formatado_already_formatted(self):
+        p = Pessoa(nome="TESTE", cpf="123.456.789-01", rg="", data_nascimento="")
+        self.assertEqual(p.cpf_formatado, "123.456.789-01")
+
+    def test_cpf_formatado_mixed_formatting_spaces(self):
+        p = Pessoa(nome="TESTE", cpf="  123 456 789-01  ", rg="", data_nascimento="")
+        self.assertEqual(p.cpf_formatado, "123.456.789-01")
+
+    def test_cpf_formatado_empty(self):
+        p = Pessoa(nome="TESTE", cpf="", rg="", data_nascimento="")
+        self.assertEqual(p.cpf_formatado, "..-")
+
+    def test_cpf_formatado_short(self):
+        p = Pessoa(nome="TESTE", cpf="123", rg="", data_nascimento="")
+        self.assertEqual(p.cpf_formatado, "123..-")
+
 if __name__ == "__main__":
     unittest.main()
