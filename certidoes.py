@@ -1415,13 +1415,13 @@ def coletar_dados() -> Pessoa:
             email = novo
 
         pessoa = Pessoa(
-            nome=nome.upper().upper(),
+            nome=nome.upper(),
             cpf=cpf_raw,
-            rg=rg.upper().upper(),
+            rg=rg.upper(),
             data_nascimento=data_nasc,
             genero=genero_raw.upper(),
             nome_mae=nome_mae.upper() if nome_mae else None,
-            email=email.lower().lower() if email else None,
+            email=email.lower() if email else None,
         )
 
         print(f"\n  {'─'*58}")
