@@ -298,7 +298,10 @@ async def site_protesto_sp(page: Page, ctx: BrowserContext, pessoa: Pessoa, past
         except Exception:
             pass
         
-        await page.wait_for_timeout(4000)
+        try:
+            await page.wait_for_load_state("networkidle", timeout=4000)
+        except Exception:
+            pass
 
         # Screenshot do resultado
         arquivo = os.path.join(pasta, f"{nome}_{datestamp()}.jpg")
