@@ -65,5 +65,13 @@ class TestPessoa(unittest.TestCase):
         p = Pessoa(nome="   ", cpf="", rg="", data_nascimento="")
         self.assertEqual(p.primeiro_nome, "")
 
+    def test_uppercase_name(self):
+        p = Pessoa(nome="MARIA JOAQUINA", cpf="", rg="", data_nascimento="")
+        self.assertEqual(p.primeiro_nome, "maria")
+
+    def test_name_with_numbers(self):
+        p = Pessoa(nome="João123 Silva", cpf="", rg="", data_nascimento="")
+        self.assertEqual(p.primeiro_nome, "joao123")
+
 if __name__ == "__main__":
     unittest.main()
