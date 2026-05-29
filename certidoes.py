@@ -104,7 +104,6 @@ from utils import timestamp, datestamp, criar_pasta, _formatar_data
 
 async def aceitar_cookies(page: Page):
     """Tenta aceitar banners de cookies comuns."""
-    await page.wait_for_timeout(2000)
     seletores = [
         "button:has-text('Aceitar')",
         "button:has-text('Aceito')",
@@ -125,17 +124,15 @@ async def aceitar_cookies(page: Page):
         "button[aria-label*='cookie']",
         "button[aria-label*='Cookie']",
     ]
-    for sel in seletores:
-        try:
-            el = page.locator(sel).first
-            if await el.is_visible(timeout=600):
-                await el.click()
-                logger.info("   🍪 Cookies aceitos.")
-                await page.wait_for_timeout(800)
-                return
-        except Exception:
-            continue
-    logger.debug("   Nenhum banner de cookies encontrado.")
+    seletor_combinado = ", ".join(f"{sel}:visible" for sel in seletores)
+    try:
+        el = page.locator(seletor_combinado).first
+        await el.click(timeout=2000)
+        logger.info("   🍪 Cookies aceitos.")
+        await page.wait_for_timeout(800)
+        return
+    except Exception:
+        logger.debug("   Nenhum banner de cookies encontrado.")
 
 
 async def aguardar_usuario(mensagem: str):
