@@ -21,6 +21,7 @@ import os
 import sys
 import json
 import logging
+import unicodedata
 from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional, List
@@ -85,7 +86,6 @@ class Pessoa:
     @property
     def primeiro_nome(self) -> str:
         """Retorna o primeiro nome em minúsculas, sem acentos."""
-        import unicodedata
         partes = self.nome.split()
         if not partes:
             return ""
@@ -137,7 +137,6 @@ async def aceitar_cookies(page: Page):
 
 async def aguardar_usuario(mensagem: str):
     """Pausa e aguarda ENTER do usuário."""
-    import sys
     print(f"\n[PAUSA] {mensagem}")
     print(f"➜ Aguardando interação manual no navegador...")
     if not sys.stdin.isatty():
@@ -1042,7 +1041,6 @@ async def site_tjsp_civil(page: Page, ctx: BrowserContext, pessoa: Pessoa, pasta
 
 async def site_tjsp_criminal(page: Page, ctx: BrowserContext, pessoa: Pessoa, pasta: str) -> dict:
     if not pessoa.data_nascimento or not pessoa.nome_mae:
-        import logging
         logger = logging.getLogger(__name__)
         logger.info("⏭️ [6/8] TJSP Criminal — Ignorada (Data de Nascimento ou Nome da Mãe não informados).")
         return {"site": "TJSP 1ª Instância (Criminal)", "sucesso": True, "arquivo": "IGNORADA", "erro": None}
