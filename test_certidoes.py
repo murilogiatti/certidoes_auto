@@ -32,6 +32,47 @@ class TestPessoa(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Data de nascimento inválida. Formato esperado: DD/MM/AAAA"):
             _ = p.data_nascimento_iso
 
+    # Testes de cpf_limpo
+    def test_cpf_limpo_already_clean(self):
+        p = Pessoa(nome="TESTE", cpf="12345678901", rg="", data_nascimento="")
+        self.assertEqual(p.cpf_limpo, "12345678901")
+
+    def test_cpf_limpo_with_dots_and_dashes(self):
+        p = Pessoa(nome="TESTE", cpf="123.456.789-01", rg="", data_nascimento="")
+        self.assertEqual(p.cpf_limpo, "12345678901")
+
+    def test_cpf_limpo_with_spaces(self):
+        p = Pessoa(nome="TESTE", cpf=" 123 456 789 01 ", rg="", data_nascimento="")
+        self.assertEqual(p.cpf_limpo, "12345678901")
+
+    def test_cpf_limpo_empty(self):
+        p = Pessoa(nome="TESTE", cpf="", rg="", data_nascimento="")
+        self.assertEqual(p.cpf_limpo, "")
+
+    # Testes de cpf_formatado
+    def test_cpf_formatado_from_clean(self):
+        p = Pessoa(nome="TESTE", cpf="12345678901", rg="", data_nascimento="")
+        self.assertEqual(p.cpf_formatado, "123.456.789-01")
+
+    def test_cpf_formatado_from_dirty(self):
+        p = Pessoa(nome="TESTE", cpf="123.456.789-01", rg="", data_nascimento="")
+        self.assertEqual(p.cpf_formatado, "123.456.789-01")
+
+    def test_cpf_formatado_from_spaces(self):
+        p = Pessoa(nome="TESTE", cpf=" 123 456 789 01 ", rg="", data_nascimento="")
+        self.assertEqual(p.cpf_formatado, "123.456.789-01")
+
+    def test_cpf_formatado_short(self):
+        # Even though real CPF has 11 chars, we should test how it behaves with shorter
+        p = Pessoa(nome="TESTE", cpf="123", rg="", data_nascimento="")
+        # "123" -> c[:3] is "123", c[3:6] is "", c[6:9] is "", c[9:] is ""
+        # => "123..-"
+        self.assertEqual(p.cpf_formatado, "123..-")
+
+    def test_cpf_formatado_empty(self):
+        p = Pessoa(nome="TESTE", cpf="", rg="", data_nascimento="")
+        self.assertEqual(p.cpf_formatado, "..-")
+
     # Testes de Primeiro Nome (PR #3)
     def test_standard_name(self):
         p = Pessoa(nome="João Silva", cpf="", rg="", data_nascimento="")
@@ -72,6 +113,27 @@ class TestPessoa(unittest.TestCase):
     def test_name_with_numbers(self):
         p = Pessoa(nome="João123 Silva", cpf="", rg="", data_nascimento="")
         self.assertEqual(p.primeiro_nome, "joao123")
+
+    # Testes de CPF formatado
+    def test_cpf_formatado_valid_unformatted(self):
+        p = Pessoa(nome="TESTE", cpf="12345678901", rg="", data_nascimento="")
+        self.assertEqual(p.cpf_formatado, "123.456.789-01")
+
+    def test_cpf_formatado_already_formatted(self):
+        p = Pessoa(nome="TESTE", cpf="123.456.789-01", rg="", data_nascimento="")
+        self.assertEqual(p.cpf_formatado, "123.456.789-01")
+
+    def test_cpf_formatado_mixed_formatting_spaces(self):
+        p = Pessoa(nome="TESTE", cpf="  123 456 789-01  ", rg="", data_nascimento="")
+        self.assertEqual(p.cpf_formatado, "123.456.789-01")
+
+    def test_cpf_formatado_empty(self):
+        p = Pessoa(nome="TESTE", cpf="", rg="", data_nascimento="")
+        self.assertEqual(p.cpf_formatado, "..-")
+
+    def test_cpf_formatado_short(self):
+        p = Pessoa(nome="TESTE", cpf="123", rg="", data_nascimento="")
+        self.assertEqual(p.cpf_formatado, "123..-")
 
 if __name__ == "__main__":
     unittest.main()

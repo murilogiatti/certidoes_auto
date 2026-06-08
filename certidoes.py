@@ -21,6 +21,7 @@ import os
 import sys
 import json
 import logging
+import unicodedata
 from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional, List
@@ -85,7 +86,6 @@ class Pessoa:
     @property
     def primeiro_nome(self) -> str:
         """Retorna o primeiro nome em minúsculas, sem acentos."""
-        import unicodedata
         partes = self.nome.split()
         if not partes:
             return ""
@@ -104,7 +104,6 @@ from utils import timestamp, datestamp, criar_pasta, _formatar_data
 
 async def aceitar_cookies(page: Page):
     """Tenta aceitar banners de cookies comuns."""
-    await page.wait_for_timeout(2000)
     seletores = [
         "button:has-text('Aceitar')",
         "button:has-text('Aceito')",
@@ -125,22 +124,19 @@ async def aceitar_cookies(page: Page):
         "button[aria-label*='cookie']",
         "button[aria-label*='Cookie']",
     ]
-    for sel in seletores:
-        try:
-            el = page.locator(sel).first
-            if await el.is_visible(timeout=600):
-                await el.click()
-                logger.info("   🍪 Cookies aceitos.")
-                await page.wait_for_timeout(800)
-                return
-        except Exception:
-            continue
-    logger.debug("   Nenhum banner de cookies encontrado.")
+    seletor_combinado = ", ".join(f"{sel}:visible" for sel in seletores)
+    try:
+        el = page.locator(seletor_combinado).first
+        await el.click(timeout=2000)
+        logger.info("   🍪 Cookies aceitos.")
+        await page.wait_for_timeout(800)
+        return
+    except Exception:
+        logger.debug("   Nenhum banner de cookies encontrado.")
 
 
 async def aguardar_usuario(mensagem: str):
     """Pausa e aguarda ENTER do usuário."""
-    import sys
     print(f"\n[PAUSA] {mensagem}")
     print(f"➜ Aguardando interação manual no navegador...")
     if not sys.stdin.isatty():
@@ -301,7 +297,10 @@ async def site_protesto_sp(page: Page, ctx: BrowserContext, pessoa: Pessoa, past
         except Exception:
             pass
         
-        await page.wait_for_timeout(4000)
+        try:
+            await page.wait_for_load_state("networkidle", timeout=4000)
+        except Exception:
+            pass
 
         # Screenshot do resultado
         arquivo = os.path.join(pasta, f"{nome}_{datestamp()}.jpg")
@@ -1042,7 +1041,6 @@ async def site_tjsp_civil(page: Page, ctx: BrowserContext, pessoa: Pessoa, pasta
 
 async def site_tjsp_criminal(page: Page, ctx: BrowserContext, pessoa: Pessoa, pasta: str) -> dict:
     if not pessoa.data_nascimento or not pessoa.nome_mae:
-        import logging
         logger = logging.getLogger(__name__)
         logger.info("⏭️ [6/8] TJSP Criminal — Ignorada (Data de Nascimento ou Nome da Mãe não informados).")
         return {"site": "TJSP 1ª Instância (Criminal)", "sucesso": True, "arquivo": "IGNORADA", "erro": None}
@@ -1415,13 +1413,13 @@ def coletar_dados() -> Pessoa:
             email = novo
 
         pessoa = Pessoa(
-            nome=nome.upper().upper(),
+            nome=nome.upper(),
             cpf=cpf_raw,
-            rg=rg.upper().upper(),
+            rg=rg.upper(),
             data_nascimento=data_nasc,
             genero=genero_raw.upper(),
             nome_mae=nome_mae.upper() if nome_mae else None,
-            email=email.lower().lower() if email else None,
+            email=email.lower() if email else None,
         )
 
         print(f"\n  {'─'*58}")
