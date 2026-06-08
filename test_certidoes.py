@@ -106,6 +106,14 @@ class TestPessoa(unittest.TestCase):
         p = Pessoa(nome="   ", cpf="", rg="", data_nascimento="")
         self.assertEqual(p.primeiro_nome, "")
 
+    def test_uppercase_name(self):
+        p = Pessoa(nome="MARIA JOAQUINA", cpf="", rg="", data_nascimento="")
+        self.assertEqual(p.primeiro_nome, "maria")
+
+    def test_name_with_numbers(self):
+        p = Pessoa(nome="João123 Silva", cpf="", rg="", data_nascimento="")
+        self.assertEqual(p.primeiro_nome, "joao123")
+
     # Testes de CPF formatado
     def test_cpf_formatado_valid_unformatted(self):
         p = Pessoa(nome="TESTE", cpf="12345678901", rg="", data_nascimento="")
