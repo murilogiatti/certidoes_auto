@@ -38,17 +38,16 @@ def extract_sellers_from_txt(filepath):
         return []
 
     # Localiza a seção de vendedores
-    match_vendedores = re.search(r'(?:1\.\s*)?VENDEDOR(?:ES|A)(.*?)(?:(?:2\.\s*)?COMPRADOR(?:ES|AS|A)|\Z)', content, re.IGNORECASE | re.DOTALL)
+    match_vendedores = re.search(r'(?:1\.\s*)?VENDEDOR(?:ES|A)?(.*?)(?:(?:2\.\s*)?COMPRADOR(?:ES|AS|A)|\Z)', content, re.IGNORECASE | re.DOTALL)
     if not match_vendedores:
         print("❌ Não foi possível encontrar a seção '1. VENDEDORES' no contrato.")
         return []
     
     texto_vendedores = match_vendedores.group(1)
     
-    # Regex para capturar pessoas (Nome, RG, CPF)
-    # Exemplo: VINICIUS DORIGON FAVORETTO, brasileiro, autônomo, portador do RG nº 35.150.104 e do CPF nº 326.602.878-30
+    # Regex para capturar pessoas (Nome, RG, CPF) de forma flexível
     pattern_pessoa = re.compile(
-        r'([A-ZÀ-Ú\s]+),\s*brasileir[oa],\s*[^,]+,\s*.*?RG.*?([\d\.\-]+)\s*e.*?CPF.*?([\d\.\-]+)',
+        r'([A-ZÀ-Ú\s]+),\s*brasileir[oa],\s*[^,]+,\s*.*?RG.*?([\d\.\-]+).*?CPF.*?([\d\.\-]+)',
         re.IGNORECASE | re.DOTALL
     )
     
@@ -60,7 +59,7 @@ def extract_sellers_from_txt(filepath):
         nome = re.sub(r'\s+', ' ', nome)
         # Limpar prefixos de casamento
         nome = re.sub(r'^.*?\bcom\s+', '', nome, flags=re.IGNORECASE).strip()
-        rg = match.group(2).strip()
+        rg = match.group(2).strip().rstrip('-')
         cpf = match.group(3).strip()
         
         # Inferência simples de gênero pelo final do primeiro nome ou por palavras chave próximas

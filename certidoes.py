@@ -1614,25 +1614,30 @@ class Dashboard:
                 is_mobile=False
             )
 
+            tentou_lote = False
             while True:
                 self.exibir()
 
                 if os.getenv("AUTO_NOME"):
-                    if os.getenv("AUTO_FORCE") == "1":
-                        pendentes = [id for id, s in self.sessao.status["sites"].items()]
-                    else:
-                        pendentes = [id for id, s in self.sessao.status["sites"].items() if s["status"] != "OK"]
-                        
-                    if os.getenv("AUTO_SITES"):
-                        permitidos = [s.strip() for s in os.getenv("AUTO_SITES").split(",")]
-                        pendentes = [id for id in pendentes if id in permitidos]
-                    
-                    if pendentes:
-                        opcao = "0"
-                        print("\n  [Orion Hub] Auto-executando pendentes permitidos (Opção 0)...")
-                    else:
+                    if tentou_lote:
                         opcao = "S"
-                        print("\n  [Orion Hub] Concluído, finalizando sessão (Opção S)...")
+                        print("\n  [Orion Hub] Lote processado, finalizando sessão (Opção S)...")
+                    else:
+                        if os.getenv("AUTO_FORCE") == "1":
+                            pendentes = [id for id, s in self.sessao.status["sites"].items()]
+                        else:
+                            pendentes = [id for id, s in self.sessao.status["sites"].items() if s["status"] != "OK"]
+                            
+                        if os.getenv("AUTO_SITES"):
+                            permitidos = [s.strip() for s in os.getenv("AUTO_SITES").split(",")]
+                            pendentes = [id for id in pendentes if id in permitidos]
+                        
+                        if pendentes:
+                            opcao = "0"
+                            print("\n  [Orion Hub] Auto-executando pendentes permitidos (Opção 0)...")
+                        else:
+                            opcao = "S"
+                            print("\n  [Orion Hub] Concluído, finalizando sessão (Opção S)...")
                 else:
                     opcao = input("\n  Escolha (ID, 0, R ou S): ").strip().upper()
 
@@ -1657,6 +1662,8 @@ class Dashboard:
                 if alvos:
                     for id in alvos:
                         await self.executar_um(id, context)
+                    if os.getenv("AUTO_NOME"):
+                        tentou_lote = True
                     if not os.getenv("AUTO_NOME"):
                         input("\n  ✅ Fim da sequência. ENTER para voltar ao Dashboard...")            
             await browser.close()
