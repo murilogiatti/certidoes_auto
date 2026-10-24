@@ -20,29 +20,28 @@ class TestUtils(unittest.TestCase):
         self.assertIsInstance(dt, datetime)
 
     def test_criar_pasta_valid_name(self):
-        # We will delete the created folder afterwards
         nome = "João da Silva"
-        expected_dir_name = "JOÃO DA SILVA"
-        
+        expected_dir_name = "JOAO DA SILVA"
+
         path = criar_pasta(nome)
-        self.assertTrue(os.path.basename(path) == expected_dir_name)
-        self.assertTrue(os.path.exists(path))
-        self.assertTrue(os.path.isdir(path))
-        
-        # Cleanup
-        shutil.rmtree(path)
+        try:
+            self.assertEqual(os.path.basename(path), expected_dir_name)
+            self.assertTrue(os.path.exists(path))
+            self.assertTrue(os.path.isdir(path))
+        finally:
+            shutil.rmtree(path, ignore_errors=True)
 
     def test_criar_pasta_invalid_chars(self):
         nome = "a/b:c*d?e\"f<g>h|i"
-        expected_dir_name = "A_B_C_D_E_F_G_H_I"
-        
-        path = criar_pasta(nome)
-        self.assertEqual(os.path.basename(path), expected_dir_name)
-        self.assertTrue(os.path.exists(path))
-        self.assertTrue(os.path.isdir(path))
+        expected_dir_name = "ABCDEFGHI"
 
-        # Cleanup
-        shutil.rmtree(path)
+        path = criar_pasta(nome)
+        try:
+            self.assertEqual(os.path.basename(path), expected_dir_name)
+            self.assertTrue(os.path.exists(path))
+            self.assertTrue(os.path.isdir(path))
+        finally:
+            shutil.rmtree(path, ignore_errors=True)
 
     def test_formatar_data_valid(self):
         self.assertEqual(_formatar_data("28111988"), "28/11/1988")

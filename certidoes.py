@@ -100,8 +100,6 @@ class Pessoa:
 #  FUNÇÕES UTILITÁRIAS
 # ───────────────────────────────────────────────────────────────
 
-from utils import timestamp, datestamp, criar_pasta, _formatar_data
-
 async def aceitar_cookies(page: Page):
     """Tenta aceitar banners de cookies comuns."""
     seletores = [
